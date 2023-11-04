@@ -5,8 +5,6 @@ import hmac
 import json
 import urllib.parse
 import math
-import os
-import signal
 
 class TraderConfig:
     def __init__(self, symbol, leverage, total_margin, drop_to_buy, rise_to_sell, max_buy_times, test_mode=True, api_key='', api_secret=''):
@@ -278,8 +276,8 @@ if __name__ == "__main__":
         rise_to_sell=0.001,
         max_buy_times=4,
         test_mode=True,  # 设置为 True 以使用模拟盘，设置为 False 以使用实盘
-        api_key='xxx',  # 你的 Binance API Key
-        api_secret='xxx'  # 你的 Binance API Secret
+        api_key='xxxx',  # 你的 Binance API Key
+        api_secret='xxxx'  # 你的 Binance API Secret
     )
     trader = GridTrader(config)
     trader.trade()
