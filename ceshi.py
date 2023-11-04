@@ -130,43 +130,6 @@ class BinanceAPI:
             print(f'Order {order_id} cancelled successfully')
         else:
             print(f'Failed to cancel order {order_id}: {response}')
-class Order:
-    def __init__(self, id, price, amount, is_filled=False):
-        self.id = id
-        self.price = price
-        self.amount = amount
-        self.is_filled = is_filled
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'price': self.price,
-            'amount': self.amount,
-            'is_filled': self.is_filled
-        }
-
-    @staticmethod
-    def from_dict(data):
-        return Order(data['id'], data['price'], data['amount'], data.get('is_filled', False))
-
-class NetworkManager:
-    def __init__(self, order_manager):
-        self.order_manager = order_manager
-
-    def perform_network_operations(self, url):
-        try:
-            # 尝试执行网络请求
-            response = requests.get(url)
-            response.raise_for_status()  # 如果请求返回了失败的状态码，将引发异常
-            return response.json()  # 或者根据您的需要处理和返回响应数据
-        except requests.exceptions.RequestException as e:
-            # 网络异常，打印错误信息并保存当前状态
-            print(f"Network error occurred: {e}")
-            self.order_manager.save_orders_state()
-            # 这里可以根据需要实现重试逻辑
-            # 例如，等待一段时间后重试或者直接返回错误
-            time.sleep(60)  # 等待一分钟后重试
-            return None  # 或者可以抛出异常或返回特定的错误信息
 
 class OrderManager:
     def __init__(self, config, api):
@@ -178,23 +141,6 @@ class OrderManager:
         self.sell_order_executed = False  # 添加这行来定义 sell_order_executed 属性
         self.buy_order_filled = False  # 新增属性
 
-    def save_orders_state(self, filepath='orders_state.json'):
-        state = {
-            'buy_orders': [order.to_dict() for order in self.buy_orders if not order.is_filled],
-            'sell_orders': [order.to_dict() for order in self.sell_orders if not order.is_filled]
-        }
-        with open(filepath, 'w') as f:
-            json.dump(state, f, indent=4)
-
-    def load_orders_state(self, filepath='orders_state.json'):
-        if os.path.exists(filepath):
-            with open(filepath, 'r') as f:
-                state = json.load(f)
-                self.buy_orders = [Order.from_dict(order_data) for order_data in state.get('buy_orders', [])]
-                self.sell_orders = [Order.from_dict(order_data) for order_data in state.get('sell_orders', [])]
-        else:
-            print("No saved state to load.")
-            
     def place_buy_orders(self, base_price):
         single_margin = self.config.total_margin / self.config.max_buy_times
         single_amount = single_margin * self.config.leverage / base_price
@@ -241,15 +187,9 @@ class GridTrader:
         self.config = config
         self.api = BinanceAPI(config)
         self.order_manager = OrderManager(config, self.api)
-        self.network_manager = NetworkManager(self.order_manager)
         self.base_price = None
         self.new_cycle_flag = True
         self.order_executed = False  # 初始化 order_executed 属性
-
-    def handle_exit(self, signum, frame):
-        print("Saving orders state and exiting...")
-        self.order_manager.save_orders_state()
-        exit(1)
         
     def start_trade_cycle(self):
         print('Starting trade cycle...')  # 添加此打印语句来检查方法调用
@@ -312,14 +252,8 @@ class GridTrader:
                 else:
                     print(f"Failed to replenish buy order for sell order {order_id}")
 
-    def trade(self):
-        # 设置信号处理函数以在程序退出前保存状态
-        signal.signal(signal.SIGINT, self.handle_exit)
-        signal.signal(signal.SIGTERM, self.handle_exit)
 
-        # 加载订单状态
-        self.order_manager.load_orders_state()
-        
+    def trade(self):
         # 主交易循环
         while True:
             print(f'Entering trade loop: new_cycle_flag={self.new_cycle_flag}, base_price={self.base_price}')
@@ -333,25 +267,19 @@ class GridTrader:
             self.check_and_replace_buy_orders()
             self.check_price_rise()
 
-            # 执行网络操作，这里替换为您的API URL
-            data = self.network_manager.perform_network_operations(self.api.base_url)
-            if data is None:
-                # 网络请求失败，已保存状态并等待重试
-                continue  # 或者根据您的逻辑决定是否继续循环或退出
-
             time.sleep(1)
 
 if __name__ == "__main__":
     config = TraderConfig(
-        symbol='BTCUSDT',
+        symbol='BNBUSDT',
         leverage=10,
-        total_margin=10000,
+        total_margin=1000,
         drop_to_buy=0.0011,
         rise_to_sell=0.001,
         max_buy_times=4,
         test_mode=True,  # 设置为 True 以使用模拟盘，设置为 False 以使用实盘
         api_key='xxx',  # 你的 Binance API Key
-        api_secret='xxxx'  # 你的 Binance API Secret
+        api_secret='xxx'  # 你的 Binance API Secret
     )
     trader = GridTrader(config)
     trader.trade()
