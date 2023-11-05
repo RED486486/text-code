@@ -34,14 +34,7 @@ class BinanceAPI:
         params['recvWindow'] = 10000
         query_string = urllib.parse.urlencode(params)
         signature = hmac.new(self.config.api_secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
-        
-        # 检查路径中是否已经包含了查询参数（即是否包含 '?'）
-        if '?' in path:
-            # 如果路径中已经有查询参数，直接添加 '&signature=...'
-            full_url = f'{url}&signature={signature}'
-        else:
-            # 如果路径中没有查询参数，添加 '?', 然后是查询字符串和 '&signature=...'
-            full_url = f'{url}?{query_string}&signature={signature}'
+        full_url = f'{url}?{query_string}&signature={signature}'
         
         try:
             response = requests.request(method, full_url, headers=self.headers)
@@ -49,7 +42,6 @@ class BinanceAPI:
             return response.json()
         except requests.HTTPError as http_err:
             print(f'HTTP error occurred: {http_err}')  # Python 3.6
-            print(response.text)  # 打印完整的错误响应
         except Exception as err:
             print(f'Other error occurred: {err}')  # Python 3.6
         return None
@@ -111,47 +103,6 @@ class BinanceAPI:
         print(f'Failed to create {side} order: {response}')
         return None
 
-    def get_open_orders(self):
-        # 获取所有未成交的订单
-        response = self.send_request('GET', '/fapi/v1/openOrders')
-        print("Open orders response:", response)  # 打印响应    
-        if response is None:
-            return []  # 如果API调用失败，返回空列表
-        return response  # 如果成功，返回响应
-
-    def get_recent_orders(self, limit=500):
-        # 获取最近成交的订单，数量由limit参数决定
-        path = '/fapi/v1/allOrders'
-        params = {
-            'limit': limit,
-            'symbol': self.config.symbol.replace('/', '')  # 确保传递正确的交易对符号
-        }
-        response = self.send_request('GET', path, params)
-        print("Recent orders response:", response)  # 打印响应
-        if response is None:
-            return []  # 如果API调用失败，返回空列表
-        else:
-            # 筛选出已成交的订单
-            filled_orders = [order for order in response if order['status'] == 'FILLED']
-            return filled_orders  # 返回已成交的订单
-
-
-    def get_orders_for_sync(self, max_buy_times):
-        # 获取所有未成交的订单
-        open_orders = self.get_open_orders()
-        # 如果get_open_orders返回None，则将其设置为空列表
-        open_orders = open_orders if open_orders is not None else []
-        open_orders_count = len(open_orders)
-
-        # 计算需要获取的最近已成交订单的数量
-        recent_orders_limit = max_buy_times - open_orders_count
-
-        # 获取最近成交的订单
-        recent_orders = self.get_recent_orders(limit=recent_orders_limit) if recent_orders_limit > 0 else []
-
-        # 返回未成交和最近已成交的订单
-        return open_orders, recent_orders
-    
     def check_order_status(self, order_id):
         path = f'/fapi/v1/order'
         params = {
@@ -188,14 +139,6 @@ class OrderManager:
         self.sell_order_executed = False  # 添加这行来定义 sell_order_executed 属性
         self.buy_order_filled = False  # 新增属性
 
-    def sync_orders(self, open_orders, recent_orders):
-        # 同步订单到本地状态
-        for order in open_orders + recent_orders:
-            if order['side'] == 'BUY':
-                self.buy_orders[order['orderId']] = order
-            else:
-                self.sell_orders[order['orderId']] = order
-                
     def place_buy_orders(self, base_price):
         single_margin = self.config.total_margin / self.config.max_buy_times
         single_amount = single_margin * self.config.leverage / base_price
@@ -243,8 +186,7 @@ class GridTrader:
         self.api = BinanceAPI(config)
         self.order_manager = OrderManager(config, self.api)
         self.base_price = None
-        self.new_cycle_flag = False
-        self.is_first_run = True
+        self.new_cycle_flag = True
         self.order_executed = False  # 初始化 order_executed 属性
         
     def start_trade_cycle(self):
@@ -308,27 +250,8 @@ class GridTrader:
                 else:
                     print(f"Failed to replenish buy order for sell order {order_id}")
 
-    def sync_orders_on_restart(self):
-        # 根据配置计算需要同步的订单数量
-        max_buy_times = self.config.max_buy_times
 
-        # 获取未成交和最近已成交的订单
-        open_orders, recent_orders = self.api.get_orders_for_sync(max_buy_times)
-        print("Syncing orders:", open_orders, recent_orders)  # 打印订单信息
-
-        # 同步订单到本地状态
-        self.order_manager.sync_orders(open_orders, recent_orders)
-        # 返回是否有未成交订单的布尔值
-        return len(open_orders) == 0
     def trade(self):
-        if self.is_first_run:
-            self.is_first_run = False
-            if self.sync_orders_on_restart():
-                # 如果没有需要同步的订单，则准备进入新的交易周期
-                self.new_cycle = True
-            else:
-                self.base_price = self.api.get_market_price()
-
         # 主交易循环
         while True:
             print(f'Entering trade loop: new_cycle_flag={self.new_cycle_flag}, base_price={self.base_price}')
@@ -353,7 +276,7 @@ if __name__ == "__main__":
         rise_to_sell=0.001,
         max_buy_times=4,
         test_mode=True,  # 设置为 True 以使用模拟盘，设置为 False 以使用实盘
-        api_key='xxxx',  # 你的 Binance API Key
+        api_key='xxx',  # 你的 Binance API Key
         api_secret='xxxx'  # 你的 Binance API Secret
     )
     trader = GridTrader(config)
